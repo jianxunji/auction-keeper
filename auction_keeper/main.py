@@ -227,17 +227,9 @@ class AuctionKeeper:
         self.dead_since = {}
         self.lifecycle = None
 
-        logging.basicConfig(filename='test.log',
-                            format='%(asctime)-15s %(levelname)-8s %(message)s',
-                            level=(logging.DEBUG if self.arguments.debug else logging.INFO),
-                            handlers=[logging.StreamHandler()])
+        logging.basicConfig(format='%(asctime)-15s %(levelname)-8s %(message)s',
+                            level=(logging.DEBUG if self.arguments.debug else logging.INFO))
 
-        console = logging.StreamHandler()
-        console.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
-        console.setFormatter(formatter)
-        # add the handler to the root logger
-        logging.getLogger('').addHandler(console)
 
         # Create gas strategy used for non-bids and bids which do not supply gas price
         self.gas_price = DynamicGasPrice(self.arguments, self.web3)
