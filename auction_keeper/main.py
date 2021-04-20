@@ -36,6 +36,8 @@ from pymaker.lifecycle import Lifecycle
 from pymaker.model import Token
 from pymaker.numeric import Wad, Ray, Rad
 
+from web3.middleware import geth_poa_middleware
+
 from auction_keeper.gas import DynamicGasPrice, UpdatableGasPrice
 from auction_keeper.logic import Auction, Auctions, Reservoir
 from auction_keeper.model import ModelFactory
@@ -133,12 +135,15 @@ class AuctionKeeper:
         parser.add_argument("--debug", dest='debug', action='store_true',
                             help="Enable debug output")
 
+        parser.add_argument("--network", type=str, default='kovan', help="Network Name")
+
         self.arguments = parser.parse_args(args)
 
         # Configure connection to the chain
         self.web3: Web3 = kwargs['web3'] if 'web3' in kwargs else web3_via_http(
             endpoint_uri=self.arguments.rpc_host, timeout=self.arguments.rpc_timeout, http_pool_size=100)
         self.web3.eth.defaultAccount = self.arguments.eth_from
+        self.web3.middleware_onion.inject(geth_poa_middleware, layer=0)
         register_keys(self.web3, self.arguments.eth_key)
         self.our_address = Address(self.arguments.eth_from)
 
@@ -156,12 +161,16 @@ class AuctionKeeper:
             raise RuntimeError("--from-block must be specified to kick off flop auctions")
 
         # Configure core and token contracts
-        self.mcd = DssDeployment.from_node(web3=self.web3)
+        #self.mcd = DssDeployment.from_node(web3=self.web3)
+        self.mcd = DssDeployment.from_network(web3=self.web3, network = self.arguments.network)
         self.vat = self.mcd.vat
         self.cat = self.mcd.cat
         self.vow = self.mcd.vow
         self.mkr = self.mcd.mkr
         self.dai_join = self.mcd.dai_adapter
+        
+        logging.info("vat: {self.vat}, cat: {self.vat}, mkr: {self.mkr}")
+
         if self.arguments.type == 'flip':
             self.collateral = self.mcd.collaterals[self.arguments.ilk]
             self.ilk = self.collateral.ilk
@@ -218,8 +227,17 @@ class AuctionKeeper:
         self.dead_since = {}
         self.lifecycle = None
 
-        logging.basicConfig(format='%(asctime)-15s %(levelname)-8s %(message)s',
-                            level=(logging.DEBUG if self.arguments.debug else logging.INFO))
+        logging.basicConfig(filename='test.log',
+                            format='%(asctime)-15s %(levelname)-8s %(message)s',
+                            level=(logging.DEBUG if self.arguments.debug else logging.INFO),
+                            handlers=[logging.StreamHandler()])
+
+        console = logging.StreamHandler()
+        console.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
+        console.setFormatter(formatter)
+        # add the handler to the root logger
+        logging.getLogger('').addHandler(console)
 
         # Create gas strategy used for non-bids and bids which do not supply gas price
         self.gas_price = DynamicGasPrice(self.arguments, self.web3)
@@ -238,7 +256,13 @@ class AuctionKeeper:
                 self.deal_for.add(Address(account))
 
         # reduce logspew
+        # logging.getLogger('urllib3').addHandler(logging.StreamHandler())
+        # logging.getLogger('web3').addHandler(logging.StreamHandler())
+        # logging.getLogger('asyncio').addHandler(logging.StreamHandler())
+        # logging.getLogger('requests').addHandler(logging.StreamHandler())
+
         logging.getLogger('urllib3').setLevel(logging.INFO)
+        #logging.getLogger("web3").setLevel(logging.DEBUG if self.arguments.debug else logging.INFO)
         logging.getLogger("web3").setLevel(logging.INFO)
         logging.getLogger("asyncio").setLevel(logging.INFO)
         logging.getLogger("requests").setLevel(logging.INFO)
